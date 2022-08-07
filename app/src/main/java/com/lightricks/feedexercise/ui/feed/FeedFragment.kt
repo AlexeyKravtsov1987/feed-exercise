@@ -10,9 +10,11 @@ import androidx.databinding.DataBindingUtil
 import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.room.Room
 import com.google.android.material.snackbar.BaseTransientBottomBar.LENGTH_LONG
 import com.google.android.material.snackbar.Snackbar
 import com.lightricks.feedexercise.R
+import com.lightricks.feedexercise.database.FeedDatabase
 import com.lightricks.feedexercise.databinding.FeedFragmentBinding
 
 /**
@@ -36,7 +38,11 @@ class FeedFragment : Fragment() {
     }
 
     private fun setupViewModel() {
-        viewModel = ViewModelProvider(this, FeedViewModelFactory())
+        val db = Room.databaseBuilder(
+            this.context!!,
+            FeedDatabase::class.java, "feed-database"
+            ).build()
+        viewModel = ViewModelProvider(this, FeedViewModelFactory(db))
             .get(FeedViewModel::class.java)
 
         viewModel.getFeedItems().observe(viewLifecycleOwner, Observer { items ->
