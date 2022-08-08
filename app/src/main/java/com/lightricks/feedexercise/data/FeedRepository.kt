@@ -5,6 +5,7 @@ import com.lightricks.feedexercise.database.FeedItemDBEntity
 import com.lightricks.feedexercise.network.FeedApiService
 import com.lightricks.feedexercise.network.TemplatesMetadata
 import io.reactivex.Completable
+import io.reactivex.Observable
 import io.reactivex.schedulers.Schedulers
 
 /**
@@ -14,7 +15,7 @@ import io.reactivex.schedulers.Schedulers
 class FeedRepository {
     private lateinit var db: FeedDatabase
     private lateinit var feedApiService: FeedApiService
-
+    private val urlPrefix = "https://assets.swishvideoapp.com/Android/demo/catalog/thumbnails/"
     fun setFeedApiService(feedApiService: FeedApiService){
         this.feedApiService=feedApiService
     }
@@ -31,7 +32,9 @@ class FeedRepository {
             }
     }
 
-
+    fun fetchData(): Observable<List<FeedItem>>{
+        return db.feedItemDao().getAll().map { it.toFeedItems() }
+    }
 
     private fun updateWithFeedItemList(list: List<FeedItem>) :Completable {
         return db.feedItemDao().deleteAll()
@@ -42,8 +45,7 @@ class FeedRepository {
     private fun updateFromTemplatesMetadata(list: TemplatesMetadata) :Completable{
         val resp = list?.templatesMetadata?.map { it ->
             FeedItem(it.id,
-                ("https://assets.swishvideoapp.com/Android/demo/catalog/thumbnails/" +
-                        it.templateThumbnailURI),
+                urlPrefix + it.templateThumbnailURI,
                 it.isPremium) }
         return updateWithFeedItemList(resp!!)
     }
@@ -51,6 +53,12 @@ class FeedRepository {
     private fun List<FeedItem>.toFeedItemDBEntities(): List<FeedItemDBEntity> {
         return map {
             FeedItemDBEntity(it.id, it.thumbnailUrl, it.isPremium)
+        }
+    }
+
+    private fun List<FeedItemDBEntity>.toFeedItems(): List<FeedItem> {
+        return map {
+            FeedItem(it.id, it.thumbnailUrl, it.isPremium)
         }
     }
 

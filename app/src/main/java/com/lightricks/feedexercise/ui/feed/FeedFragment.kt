@@ -14,8 +14,10 @@ import androidx.room.Room
 import com.google.android.material.snackbar.BaseTransientBottomBar.LENGTH_LONG
 import com.google.android.material.snackbar.Snackbar
 import com.lightricks.feedexercise.R
+import com.lightricks.feedexercise.data.FeedRepository
 import com.lightricks.feedexercise.database.FeedDatabase
 import com.lightricks.feedexercise.databinding.FeedFragmentBinding
+import com.lightricks.feedexercise.network.FeedApiService
 
 /**
  * This Fragment shows the feed grid. The feed consists of template thumbnail images.
@@ -38,11 +40,17 @@ class FeedFragment : Fragment() {
     }
 
     private fun setupViewModel() {
+
         val db = Room.databaseBuilder(
             this.context!!,
             FeedDatabase::class.java, "feed-database"
             ).build()
-        viewModel = ViewModelProvider(this, FeedViewModelFactory(db))
+        val feedApiService = FeedApiService.create()
+        val repository = FeedRepository()
+        repository.setFeedApiService(feedApiService)
+        repository.setDB(db)
+
+        viewModel = ViewModelProvider(this, FeedViewModelFactory(repository))
             .get(FeedViewModel::class.java)
 
         viewModel.getFeedItems().observe(viewLifecycleOwner, Observer { items ->
