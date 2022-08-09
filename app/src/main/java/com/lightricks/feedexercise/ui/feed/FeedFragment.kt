@@ -41,14 +41,7 @@ class FeedFragment : Fragment() {
 
     private fun setupViewModel() {
 
-        val db = Room.databaseBuilder(
-            this.context!!,
-            FeedDatabase::class.java, "feed-database"
-            ).build()
-        val feedApiService = FeedApiService.create()
-        val repository = FeedRepository()
-        repository.setFeedApiService(feedApiService)
-        repository.setDB(db)
+        val repository = FeedRepository.getRepository(context!!)
 
         viewModel = ViewModelProvider(this, FeedViewModelFactory(repository))
             .get(FeedViewModel::class.java)

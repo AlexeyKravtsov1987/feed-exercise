@@ -18,12 +18,13 @@ import com.squareup.moshi.JsonClass
 
 * */
 @JsonClass(generateAdapter = true)
-data class TemplateMetadata(@field:Json(name = "id") val id: String,
-                            @field:Json(name = "configuration") val configuration: String,
-                            @field:Json(name = "isNew") val isNew: Boolean,
-                            @field:Json(name = "isPremium") val isPremium: Boolean,
-                            @field:Json(name = "templateCategories") val templateCategories: List<String>,
-                            @field:Json(name = "templateName") val templateName: String,
-                            @field:Json(name = "templateThumbnailURI") val templateThumbnailURI: String)
+data class TemplateMetadataItem(val id: String,
+                            val configuration: String,
+                            val isNew: Boolean,
+                            val isPremium: Boolean,
+                            val templateCategories: List<String>,
+                            val templateName: String,
+                            val templateThumbnailURI: String)
+
 @JsonClass(generateAdapter = true)
-data class TemplatesMetadata(@field:Json(name = "templatesMetadata") val templatesMetadata: List<TemplateMetadata>)
+data class TemplatesMetadata(val templatesMetadata: List<TemplateMetadataItem>)

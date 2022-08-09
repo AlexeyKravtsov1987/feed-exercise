@@ -3,6 +3,7 @@ package com.lightricks.feedexercise.ui.feed
 import androidx.lifecycle.*
 import com.lightricks.feedexercise.data.FeedItem
 import com.lightricks.feedexercise.data.FeedRepository
+import com.lightricks.feedexercise.database.FeedItemDBEntity
 import com.lightricks.feedexercise.util.Event
 import io.reactivex.BackpressureStrategy
 import io.reactivex.android.schedulers.AndroidSchedulers
@@ -18,8 +19,8 @@ open class FeedViewModel(private val repository: FeedRepository) : ViewModel() {
     private var listOffset = 0
 
     private val feedItems: LiveData<List<FeedItem>> =
-        LiveDataReactiveStreams.fromPublisher(
-            repository.fetchData().toFlowable(BackpressureStrategy.DROP))
+        repository.fetchData()
+
 
     fun getIsLoading(): LiveData<Boolean> {
         return isLoading
@@ -30,18 +31,20 @@ open class FeedViewModel(private val repository: FeedRepository) : ViewModel() {
     }
 
     fun getFeedItems(): LiveData<List<FeedItem>> {
-        return Transformations.map(feedItems) {
+       return Transformations.map(feedItems) {
             val size = it.size
             if (size != 0) {
                 val offset = listOffset % size
                 it.takeLast(size - offset) + it.take(offset)
             } else listOf()
         }
+
+
     }
 
     private fun handleNetworkError(error: Throwable?) {
+        networkErrorEvent.postValue(Event(error?.message ?: "network error"))
         isLoading.postValue(false)
-        networkErrorEvent.postValue(Event(error.toString()))
     }
 
 
@@ -55,10 +58,9 @@ open class FeedViewModel(private val repository: FeedRepository) : ViewModel() {
     fun refresh() {
         isLoading.postValue(true)
         repository.refresh()
-            .subscribeOn(Schedulers.io())
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
-                { isLoading.postValue(false) },
+                { isLoading.postValue(false);android.util.Log.d("Test2","hi") },
                 { error->handleNetworkError(error) }
             )
         listOffset++
