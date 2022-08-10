@@ -1,7 +1,9 @@
 package com.lightricks.feedexercise.data
 
+import android.accounts.NetworkErrorException
 import android.content.Context
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.Observer
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -11,20 +13,32 @@ import com.lightricks.feedexercise.database.FeedItemDBEntity
 import com.lightricks.feedexercise.database.FeedItemDao
 import com.lightricks.feedexercise.network.FeedApiService
 import com.lightricks.feedexercise.network.TemplatesMetadata
-import com.lightricks.feedexercise.ui.feed.FeedViewModel
-import com.lightricks.feedexercise.util.Event
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import io.reactivex.Single
+import okhttp3.Interceptor
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import retrofit2.HttpException
+import retrofit2.Retrofit
+import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
+import retrofit2.converter.moshi.MoshiConverterFactory
+import retrofit2.create
+import retrofit2.http.GET
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class FeedRepositoryTest {
+
+
 
     private lateinit var userDao: FeedItemDao
     private lateinit var db: FeedDatabase
@@ -62,27 +76,63 @@ class FeedRepositoryTest {
     @get:Rule
     var instantExecutorRule = InstantTaskExecutorRule()
 
-    @Test
-    fun refreshShouldFailOnBadNetworkAddress(){
-        FeedApiService.BASE_URL="http://badaddress.baddomain"
-        val service =
-            FeedApiService.FeedApi.service
-        val repository = FeedRepository(db, service)
-        val viewModel = FeedViewModel(repository)
-        var errorString=""
 
-        val errorObserver = object : Observer<Event<String>> {
-            override fun onChanged(t: Event<String>?) {
-                if (t != null)
-                    errorString = t.peekContent()
-                }
+    class MockInterceptor : Interceptor {
+
+        override fun intercept(chain: Interceptor.Chain): Response {
+                return chain.proceed(chain.request())
+                    .newBuilder()
+                    .code(404)
+                    .protocol(Protocol.HTTP_2)
+                    .build()
         }
-        viewModel.getNetworkErrorEvent().observeForever (errorObserver)
+    }
 
-        waitForEndOfLoading(viewModel)
-        viewModel.getNetworkErrorEvent().removeObserver(errorObserver)
-        assert(errorString != "")
+    interface MockFeedApiService : FeedApiService {
+        @GET("feed.json")
+        override fun getFeed() : Single<TemplatesMetadata>
 
+        object FeedApi {
+            val service = Retrofit.Builder()
+                .addConverterFactory(MoshiConverterFactory.create())
+                .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
+                .client(OkHttpClient.Builder()
+                    .addInterceptor(MockInterceptor()).build())
+                .baseUrl("https://google.com")
+                .build()
+                .create<MockFeedApiService>()
+        }
+    }
+    @Test
+    fun refreshShouldFailWith404Code(){
+        val mockFeedApiService = MockFeedApiService.FeedApi.service
+        val repository = FeedRepository(db, mockFeedApiService)
+
+        val observable = repository.refresh()
+
+        val observer=observable.test()
+        observer.awaitTerminalEvent()
+        observer.assertError(HttpException::class.java)
+    }
+    
+    class MockFeedApiServiceException(message: String?) : NetworkErrorException(message)
+
+
+    @Test
+    fun refreshShouldFailOnApiServiceError(){
+        val simpleMockFeedApiService = object : FeedApiService{
+            override fun getFeed(): Single<TemplatesMetadata> {
+                return Single.error(MockFeedApiServiceException(""))
+            }
+
+        }
+        val repository = FeedRepository(db, simpleMockFeedApiService)
+
+        val observable = repository.refresh()
+
+        val observer=observable.test()
+        observer.awaitTerminalEvent()
+        observer.assertError(MockFeedApiServiceException::class.java)
     }
 
     @Test
@@ -92,7 +142,7 @@ class FeedRepositoryTest {
                 return Single.just(serviceResponse)
             }
         }
-        val itemListSize=Integer(serviceResponse.templatesMetadata.size)
+        val itemListSize=serviceResponse.templatesMetadata.size
         val repository = FeedRepository(db, service)
         val observer = repository.refresh().test()
 
@@ -100,9 +150,11 @@ class FeedRepositoryTest {
         observer
             .assertNoErrors()
             .assertComplete()
-        userDao
-            .getCount().test()
-            .assertValues(itemListSize)
+        val observeGetCount = userDao
+            .getCount()
+            .test()
+            .assertResult(Integer(itemListSize))
+
     }
 
     @Test
@@ -118,46 +170,33 @@ class FeedRepositoryTest {
         val repository = FeedRepository(db, service)
         val DBEntries = listOf(FeedItemDBEntity(mockID,mockURI,true) )
 
-        val viewModel = FeedViewModel(repository)
-        waitForEndOfLoading(viewModel)
-
-        val deletion = db.feedItemDao().deleteAll().test()
-        deletion.awaitTerminalEvent()
-        val insertion = db.feedItemDao().insertAll(DBEntries).test()
+        val initialContent = repository.fetchData().blockingObserve()!!
+        assert(initialContent.isEmpty())
+        val insertion = userDao.insertAll(DBEntries).test()
         insertion.awaitTerminalEvent()
 
-        val property = viewModel.getFeedItems()
+        val updatedContent = repository.fetchData().blockingObserve()!!
 
-        val observerLD = object : Observer<List<FeedItem>> {
-            override fun onChanged(t: List<FeedItem>?) {
-                if (!t.isNullOrEmpty())
-                    property.removeObserver(this)
-            }
-        }
-
-        property.observeForever (observerLD)
-        while(property.hasObservers()){ }
-
-        assert(property.value?.size == DBEntries.size)
-        val item = property.value!!.get(0)
+        assert(updatedContent.size == DBEntries.size)
+        val item = updatedContent.get(0)
         assert(item.isPremium)
         assert(item.id == mockID)
         assert(item.thumbnailUrl == mockURI)
     }
 
-    private fun waitForEndOfLoading(viewModel:FeedViewModel){
-        var isLoading = false
-        val loadingObserver = object : Observer<Boolean> {
-            override fun onChanged(t: Boolean?) {
-                if (t!!)
-                    isLoading = true
-                if (isLoading && !t!!) {
-                    viewModel.getIsLoading().removeObserver(this)
-                }
+    private fun <T> LiveData<T>.blockingObserve(): T? {
+        var value: T? = null
+        val latch = CountDownLatch(1)
+        val observer = object : Observer<T> {
+            override fun onChanged(t: T) {
+                value = t
+                latch.countDown()
+                removeObserver(this)
             }
         }
-        viewModel.getIsLoading().observeForever(loadingObserver)
-        while (viewModel.getIsLoading().hasObservers()){}
 
+        observeForever(observer)
+        latch.await(5, TimeUnit.SECONDS)
+        return value
     }
 }

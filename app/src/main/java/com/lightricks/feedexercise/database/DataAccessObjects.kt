@@ -17,7 +17,6 @@ interface FeedItemDao {
 
     @Query("SELECT * FROM FeedItemDBEntity")
     fun getAll(): LiveData<List<FeedItemDBEntity>>
-    //fun getAll(): Observable<List<FeedItemDBEntity>>
 
     @Query("SELECT COUNT(*) FROM FeedItemDBEntity")
     fun getCount(): Single<Integer>

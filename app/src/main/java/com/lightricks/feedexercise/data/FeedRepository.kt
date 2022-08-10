@@ -1,14 +1,19 @@
 package com.lightricks.feedexercise.data
 
 import android.content.Context
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.LiveDataReactiveStreams
+import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.Transformations
 import androidx.room.Room
 import com.bumptech.glide.load.Transformation
 import com.lightricks.feedexercise.database.FeedDatabase
 import com.lightricks.feedexercise.database.FeedItemDBEntity
 import com.lightricks.feedexercise.network.FeedApiService
+import com.lightricks.feedexercise.network.TemplateMetadataItem
 import com.lightricks.feedexercise.network.TemplatesMetadata
 import io.reactivex.BackpressureStrategy
 import io.reactivex.Completable
@@ -20,17 +25,9 @@ import io.reactivex.schedulers.Schedulers
  * where the data actually comes from (network, database or somewhere else).
  */
 
-class FeedRepository(private var db: FeedDatabase,
-                     private var feedApiService: FeedApiService) {
+class FeedRepository(private val db: FeedDatabase,
+                     private val feedApiService: FeedApiService) {
     private val urlPrefix = FeedApiService.BASE_URL + "catalog/thumbnails/"
-
-    fun setFeedApiService(feedApiService: FeedApiService) {
-        this.feedApiService=feedApiService
-    }
-
-    fun setDB(db: FeedDatabase) {
-        this.db=db
-    }
 
     fun refresh(): Completable {
         return feedApiService.getFeed()
@@ -41,37 +38,27 @@ class FeedRepository(private var db: FeedDatabase,
     }
 
     fun fetchData(): LiveData<List<FeedItem>>{
-        return Transformations.map(db.feedItemDao().getAll()){ it.toFeedItems() }
-        /*
-        // to use with Observable<> DAO
-        return LiveDataReactiveStreams
-            .fromPublisher(
-                db.feedItemDao().getAll()
-                    .map { it.toFeedItems() }
-                    .toFlowable(BackpressureStrategy.LATEST)
-            )
-
-         */
-    }
+        return Transformations
+            .map(db.feedItemDao().getAll()){ it.toFeedItems() }
+}
 
     private fun updateFromTemplatesMetadata(list: TemplatesMetadata): Completable {
-        val resp = list?.templatesMetadata?.map { it ->
-            FeedItemDBEntity(
-                it.id,
-                urlPrefix + it.templateThumbnailURI,
-                it.isPremium
-            )
-        }
         return db.feedItemDao().deleteAll()
-            .andThen(resp?.let {
-                db.feedItemDao()
-                    .insertAll(it)
+            .andThen(list?.templatesMetadata?.let {
+                db.feedItemDao().insertAll(it.toEntities())
             })
     }
 
     private fun List<FeedItemDBEntity>.toFeedItems(): List<FeedItem> {
         return map {
             FeedItem(it.id, it.thumbnailUrl, it.isPremium)
+        }
+    }
+    private fun List<TemplateMetadataItem>.toEntities(): List<FeedItemDBEntity> {
+        return map { FeedItemDBEntity(
+            it.id,
+            urlPrefix + it.templateThumbnailURI,
+            it.isPremium)
         }
     }
     companion object {
@@ -87,9 +74,6 @@ class FeedRepository(private var db: FeedDatabase,
             }
             return INSTANCE
         }
-
-        fun getRepository():FeedRepository?{
-            return INSTANCE
-        }
+        fun getRepository(): FeedRepository? { return INSTANCE }
     }
 }

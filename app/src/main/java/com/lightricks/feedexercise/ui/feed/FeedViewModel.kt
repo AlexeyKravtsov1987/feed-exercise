@@ -61,8 +61,8 @@ open class FeedViewModel(private val repository: FeedRepository) : ViewModel() {
         repository.refresh()
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
-                { isLoading.postValue(false);android.util.Log.d("Test2","hi") },
-                { error->handleNetworkError(error) }
+                { isLoading.postValue(false) },
+                { error -> handleNetworkError(error) }
             )
         listOffset++
     }
