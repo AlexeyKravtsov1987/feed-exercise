@@ -40,10 +40,8 @@ class FeedFragment : Fragment() {
     }
 
     private fun setupViewModel() {
-
-        val repository = FeedRepository.getRepository(context!!)
-
-        viewModel = ViewModelProvider(this, FeedViewModelFactory(repository))
+        
+        viewModel = ViewModelProvider(this, FeedViewModelFactory(context!!))
             .get(FeedViewModel::class.java)
 
         viewModel.getFeedItems().observe(viewLifecycleOwner, Observer { items ->
